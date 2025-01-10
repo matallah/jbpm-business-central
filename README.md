@@ -1,4 +1,4 @@
-# Project Name
+# jBPM
 
 ## Overview
 
