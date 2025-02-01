@@ -1,0 +1,15 @@
+<persistence xmlns="http://xmlns.jcp.org/xml/ns/persistence"
+             version="2.2">
+    <persistence-unit name="auditPU" transaction-type="JTA">
+        <jta-data-source>java:jboss/datasources/jBPMDS</jta-data-source>
+        <class>com.guh.audit.entities.JbpmModule</class>
+        <class>com.guh.audit.entities.JbpmAffectedModule</class>
+        <class>com.guh.audit.entities.JbpmAuditTrail</class>
+        <class>com.guh.audit.entities.SecurityPermissionChangedValue</class>
+        <properties>
+            <property name="hibernate.dialect" value="org.hibernate.dialect.PostgreSQLDialect"/>
+            <property name="hibernate.hbm2ddl.auto" value="update"/>
+            <property name="hibernate.show_sql" value="true"/>
+        </properties>
+    </persistence-unit>
+</persistence>
