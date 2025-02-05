@@ -15,13 +15,18 @@ Ensure you have the following prerequisites:
 
 ## Integration Steps
 
-### 1. Projects 
+### 1. Projects
 
 Add the following code at the end of the specified classes in the mapping libraries `uberfire-structure-backend-7.75.0-SNAPSHOT-sources.jar`:
 
-**Classes:**
-- `org.guvnor.structure.backend.repositories.RepositoryServiceImpl.java`
-- `org.guvnor.structure.backend.organizationalunit.config.SpaceConfigStorageImpl.java`
+**Affected JARs:**
+- `uberfire-structure-backend-7.75.0-SNAPSHOT-sources.jar`
+- `kie-wb-common-services-backend-7.75.0-20241022.122359-92-sources.jar`
+- 
+**Affected Classes:**
+- `org.guvnor.structure.backend.repositories.RepositoryServiceImpl.java` in `uberfire-structure-backend-7.75.0-SNAPSHOT-sources.jar`
+- `org.guvnor.structure.backend.organizationalunit.config.SpaceConfigStorageImpl.java` in `uberfire-structure-backend-7.75.0-SNAPSHOT-sources.jar`
+- `org.kie.workbench.common.services.backend.builder.service.BuildServiceHelper.java` in `kie-wb-common-services-backend-7.75.0-20241022.122359-92-sources.jar`
 
 ```java
 @EJB
@@ -204,8 +209,7 @@ public void saveBranchPermissions(final String branchName,
 ```
 #### 1.3 Deploy Project
 
-Adapt the following method in `org.guvnor.structure.backend.organizationalunit.config.SpaceConfigStorageImpl.java` in Jar `kie-wb-common-services-backend-7.75.0-20241022.122359-92-sources.jar
-`:
+Adapt the following method in `org.kie.workbench.common.services.backend.builder.service.BuildServiceHelper.java` in Jar `kie-wb-common-services-backend-7.75.0-20241022.122359-92-sources.jar`:
 
 ```java
 public BuildResults localBuildAndDeploy(final Module module,
