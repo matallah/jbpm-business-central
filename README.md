@@ -15,7 +15,7 @@ Ensure you have the following prerequisites:
 
 ## Integration Steps
 
-### 1. Projects
+### 1. Projects 
 
 Add the following code at the end of the specified classes in the mapping libraries `uberfire-structure-backend-7.75.0-SNAPSHOT-sources.jar`:
 
