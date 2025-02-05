@@ -323,7 +323,6 @@ public void removeRepository(final Space space,
 }
 ```
 
-
 ### 2. Pages
 
 Add the following code at the end of the specified classes in the mapping libraries `uberfire-structure-backend-7.75.0-SNAPSHOT-sources.jar`:
@@ -470,3 +469,5 @@ public void delete(Path path, String comment) {
     }
 }
 ```
+
+
