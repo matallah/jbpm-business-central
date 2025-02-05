@@ -322,3 +322,151 @@ public void removeRepository(final Space space,
             });
 }
 ```
+
+
+### 2. Pages
+
+Add the following code at the end of the specified classes in the mapping libraries `uberfire-structure-backend-7.75.0-SNAPSHOT-sources.jar`:
+
+**Affected JARs:**
+- `uberfire-layout-editor-backend-7.75.0-20241022.114530-55-sources.jar`
+-
+**Affected Classes:**
+- `org.uberfire.ext.layout.editor.impl.PerspectiveServicesImpl.jar` in `uberfire-layout-editor-backend-7.75.0-20241022.114530-55-sources.jar`
+
+```java
+@EJB
+private AuditActionService auditActionService;
+
+@Inject
+private HttpServletRequest request;
+
+@Inject
+private User loggedInUser;
+
+// Add this new method to the class
+private Map<String, String> getCurrentUserInfo() {
+    Map<String, String> userInfo = new LinkedHashMap<>();
+
+    try {
+        // Get username
+        String username = loggedInUser != null ? loggedInUser.getIdentifier() : "unknown";
+
+        // Get session ID
+        HttpSession session = request.getSession(false);
+        String sessionId = session != null ? session.getId() : "no-session";
+
+        // Get IP address
+        String ipAddress = getClientIpAddress(request);
+
+        userInfo.put("username", username);
+        userInfo.put("sessionId", sessionId);
+        userInfo.put("ipAddress", ipAddress);
+
+        logger.debug("User info collected - username: {}, sessionId: {}, ipAddress: {}",
+                username, sessionId, ipAddress);
+
+    } catch (Exception e) {
+        logger.error("Error getting user information", e);
+        userInfo.put("error", "Failed to retrieve user information: " + e.getMessage());
+    }
+
+    return userInfo;
+}
+
+private String getClientIpAddress(HttpServletRequest request) {
+    String[] HEADERS_TO_CHECK = {
+            "X-Forwarded-For",
+            "Proxy-Client-IP",
+            "WL-Proxy-Client-IP",
+            "HTTP_X_FORWARDED_FOR",
+            "HTTP_X_FORWARDED",
+            "HTTP_X_CLUSTER_CLIENT_IP",
+            "HTTP_CLIENT_IP",
+            "HTTP_FORWARDED_FOR",
+            "HTTP_FORWARDED",
+            "HTTP_VIA",
+            "REMOTE_ADDR"
+    };
+
+    for (String header : HEADERS_TO_CHECK) {
+        String ip = request.getHeader(header);
+        if (ip != null && ip.length() != 0 && !"unknown".equalsIgnoreCase(ip)) {
+            // If it's a comma separated list, take the first IP
+            return ip.contains(",") ? ip.split(",")[0].trim() : ip;
+        }
+    }
+
+    return request.getRemoteAddr();
+}
+```
+
+#### 2.1 Add New Page
+
+Adapt the following method in `org.uberfire.ext.layout.editor.impl.PerspectiveServicesImpl.jar` in Jar `uberfire-layout-editor-backend-7.75.0-20241022.114530-55-sources.jar`:
+
+```java
+@Override
+public Path saveLayoutTemplate(Path perspectivePath, LayoutTemplate layoutTemplate, String commitMessage) {
+    String layoutModel = layoutServices.convertLayoutToString(layoutTemplate);
+    LayoutEditorModel plugin = new LayoutEditorModel(layoutTemplate.getName(), PluginType.PERSPECTIVE_LAYOUT, perspectivePath, layoutModel);
+    pluginServices.saveLayout(plugin, commitMessage);
+    Map<String, String> currentUserInfo = getCurrentUserInfo();
+    if (!currentUserInfo.containsKey("error")) {
+        // Capture variables for async logging
+        String username = currentUserInfo.get("username");
+        AuditActionService.ActionType actionType = commitMessage.contains("check-in") ? AuditActionService.ActionType.INSERT : AuditActionService.ActionType.UPDATE;
+        String ipAddress = currentUserInfo.get("ipAddress");
+        String sessionId = currentUserInfo.get("sessionId");
+        // Execute audit logging asynchronously
+        CompletableFuture.runAsync(() -> {
+            try {
+                this.auditActionService.logPageAction(
+                        layoutTemplate.getName(),
+                        username,
+                        actionType,
+                        ipAddress,
+                        sessionId
+                );
+            } catch (Exception ignored) {
+            }
+        });
+    }
+    return perspectivePath;
+}
+```
+#### 2.2 Edit Page
+- Same above code of 2.1 Add New Page
+
+#### 2.4 Delete Page
+
+Adapt the following method in `org.uberfire.ext.layout.editor.impl.PerspectiveServicesImpl.jar` in Jar `uberfire-layout-editor-backend-7.75.0-20241022.114530-55-sources.jar`:
+
+```java
+@Override
+public void delete(Path path, String comment) {
+    pluginServices.delete(path, comment);
+    Plugin plugin = pluginServices.getPluginContent(path);
+    Map<String, String> currentUserInfo = getCurrentUserInfo();
+    if (!currentUserInfo.containsKey("error")) {
+        // Capture variables for async logging
+        String username = currentUserInfo.get("username");
+        AuditActionService.ActionType actionType = AuditActionService.ActionType.INSERT;
+        String ipAddress = currentUserInfo.get("ipAddress");
+        String sessionId = currentUserInfo.get("sessionId");
+        // Execute audit logging asynchronously
+        CompletableFuture.runAsync(() -> {
+            try {
+                this.auditActionService.logPageAction(
+                        plugin.getName(),
+                        username,
+                        actionType,
+                        ipAddress,
+                        sessionId
+                );
+            } catch (Exception ignored) {
+            }
+        });
+    }
+}
+```
