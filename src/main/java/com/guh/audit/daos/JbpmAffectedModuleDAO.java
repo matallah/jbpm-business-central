@@ -2,10 +2,11 @@ package com.guh.audit.daos;
 
 import com.guh.audit.entities.JbpmAffectedModule;
 
+import javax.ejb.Stateless;
+
+@Stateless
 public class JbpmAffectedModuleDAO extends GenericDAO<JbpmAffectedModule> {
-
-    protected JbpmAffectedModuleDAO(Class<JbpmAffectedModule> entityClass) {
-        super(entityClass);
+    public JbpmAffectedModuleDAO() {
+        super(JbpmAffectedModule.class);
     }
-
 }

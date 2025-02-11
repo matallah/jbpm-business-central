@@ -12,8 +12,8 @@ public class JbpmModuleDAO extends GenericDAO<JbpmModule> {
     @PersistenceContext(unitName = "auditPU")
     private EntityManager em;
 
-    protected JbpmModuleDAO(Class<JbpmModule> entityClass) {
-        super(entityClass);
+    public JbpmModuleDAO() {
+        super(JbpmModule.class);
     }
 
     public JbpmModule findByName(String name) {

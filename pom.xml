@@ -38,5 +38,27 @@
             <version>1.18.24</version>
             <scope>provided</scope>
         </dependency>
+
+            <!-- Java EE 8 Dependencies -->
+            <dependency>
+                <groupId>javax.servlet</groupId>
+                <artifactId>javax.servlet-api</artifactId>
+                <version>4.0.1</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>javax.ejb</groupId>
+                <artifactId>javax.ejb-api</artifactId>
+                <version>3.2</version>
+                <scope>provided</scope>
+            </dependency>
     </dependencies>
+
+    <!-- Add repositories if needed -->
+    <repositories>
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+    </repositories>
 </project>

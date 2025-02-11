@@ -50,7 +50,7 @@ public class AuditActionService {
     }
 
     public enum ActionType {
-        INSERT,UPDATE,DELETE
+        INSERT,UPDATE,DELETE, IMPORT, EXPORT, DEPLOY
     }
 
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
@@ -78,6 +78,10 @@ public class AuditActionService {
                 break;
             case UPDATE:
                 action = String.format("User %s modify %s in space %s",
+                        username, projectId, spaceId);
+                break;
+            case DEPLOY:
+                action = String.format("User %s deployed the project %s exists in space %s",
                         username, projectId, spaceId);
                 break;
             case DELETE:
@@ -164,6 +168,18 @@ public class AuditActionService {
     @TransactionAttribute(TransactionAttributeType.REQUIRED)
     public void logDashbuilderAction(String fileName, String username, String action,
                                      ActionType actionType, String ipAddress, String sessionId) {
+        switch (actionType) {
+            case IMPORT:
+                action = String.format("User %s imported dashbuilder from file %s",
+                        username, fileName);
+                break;
+            case EXPORT:
+                action = String.format("User %s exported dashbuilder from file %s",
+                        username, fileName);
+                break;
+            default:
+                throw new IllegalArgumentException("Invalid action type for datasource");
+        }
         logAction(ModuleType.DASHBUILDER, fileName, actionType, action, ipAddress, sessionId, null, null);
     }
 
