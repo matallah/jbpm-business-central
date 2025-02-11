@@ -1103,3 +1103,337 @@ public String doExport(DataTransferExportModel exportModel) throws java.io.IOExc
             .replace("\\", "/");
 }
 ```
+### 7. Security
+
+Add the following code at the end of the specified classes in the mapping libraries `dashbuilder-services-7.74.1.Final.jar`:
+
+**Affected JARs:**
+- `uberfire-backend-server-7.75.0-20241022.112904-55-sources.jar`
+-
+**Affected Classes:**
+- `org.uberfire.backend.server.authz.AuthorizationServiceImpl.java` in `uberfire-backend-server-7.75.0-20241022.112904-55-sources.jar`
+
+```java
+@EJB
+private AuditActionService auditActionService;
+
+@Inject
+private HttpServletRequest request;
+
+@Inject
+private User loggedInUser;
+
+// Add this new method to the class
+private Map<String, String> getCurrentUserInfo() {
+    Map<String, String> userInfo = new LinkedHashMap<>();
+
+    try {
+        // Get username
+        String username = loggedInUser != null ? loggedInUser.getIdentifier() : "unknown";
+
+        // Get session ID
+        HttpSession session = request.getSession(false);
+        String sessionId = session != null ? session.getId() : "no-session";
+
+        // Get IP address
+        String ipAddress = getClientIpAddress(request);
+
+        userInfo.put("username", username);
+        userInfo.put("sessionId", sessionId);
+        userInfo.put("ipAddress", ipAddress);
+
+        logger.debug("User info collected - username: {}, sessionId: {}, ipAddress: {}",
+                username, sessionId, ipAddress);
+
+    } catch (Exception e) {
+        logger.error("Error getting user information", e);
+        userInfo.put("error", "Failed to retrieve user information: " + e.getMessage());
+    }
+
+    return userInfo;
+}
+
+private String getClientIpAddress(HttpServletRequest request) {
+    String[] HEADERS_TO_CHECK = {
+            "X-Forwarded-For",
+            "Proxy-Client-IP",
+            "WL-Proxy-Client-IP",
+            "HTTP_X_FORWARDED_FOR",
+            "HTTP_X_FORWARDED",
+            "HTTP_X_CLUSTER_CLIENT_IP",
+            "HTTP_CLIENT_IP",
+            "HTTP_FORWARDED_FOR",
+            "HTTP_FORWARDED",
+            "HTTP_VIA",
+            "REMOTE_ADDR"
+    };
+
+    for (String header : HEADERS_TO_CHECK) {
+        String ip = request.getHeader(header);
+        if (ip != null && ip.length() != 0 && !"unknown".equalsIgnoreCase(ip)) {
+            // If it's a comma separated list, take the first IP
+            return ip.contains(",") ? ip.split(",")[0].trim() : ip;
+        }
+    }
+
+    return request.getRemoteAddr();
+}
+```
+
+#### 7.1 Change security settings on roles
+
+Adapt the following method in `org.dashbuilder.transfer.DataTransferServicesImpl.java` in Jar `uberfire-backend-server-7.75.0-20241022.112904-55-sources.jar`:
+
+```java
+@Override
+public List<String> doImport() throws Exception {
+    List<String> imported = new ArrayList<>();
+
+    Path root = Paths.get(URI.create(new StringBuilder().append(SpacesAPI.Scheme.GIT)
+            .append("://")
+            .append(systemFS.getName())
+            .append(File.separator)
+            .toString()
+            .replace("\\", "/")));
+
+    String expectedPath = new StringBuilder().append(File.separator)
+            .append(FILE_PATH)
+            .append(File.separator)
+            .append(IMPORT_FILE_NAME)
+            .toString()
+            .replace("\\", "/");
+
+    Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+
+        @Override
+        public FileVisitResult visitFile(Path path, BasicFileAttributes attrs) {
+            if (!path.toString().equalsIgnoreCase(expectedPath)) {
+                return FileVisitResult.CONTINUE;
+            }
+
+            try {
+                imported.addAll(importFiles(path));
+                return FileVisitResult.TERMINATE;
+
+            } catch (Exception e) {
+                LOGGER.error(e.getMessage(), e);
+                return FileVisitResult.TERMINATE;
+            }
+        }
+    });
+
+    ioService.deleteIfExists(root.resolve(expectedPath));
+
+    Map<String, String> currentUserInfo = getCurrentUserInfo();
+    if (!currentUserInfo.containsKey("error")) {
+        // Capture variables for async logging
+        String username = currentUserInfo.get("username");
+        AuditActionService.ActionType actionType = AuditActionService.ActionType.IMPORT;
+        String ipAddress = currentUserInfo.get("ipAddress");
+        String sessionId = currentUserInfo.get("sessionId");
+        // Execute audit logging asynchronously
+        CompletableFuture.runAsync(() -> {
+            try {
+                this.auditActionService.logDashbuilderAction(
+                        EXPORT_FILE_NAME,
+                        username,
+                        "",
+                        actionType,
+                        ipAddress,
+                        sessionId
+                );
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
+    return imported;
+}
+```
+
+#### 7.2 Change security settings on groups
+
+Adapt the following method in `org.uberfire.backend.server.authz.AuthorizationServiceImpl.java` in Jar `uberfire-backend-server-7.75.0-20241022.112904-55-sources.jar`:
+
+```java
+@Override
+public void savePolicy(AuthorizationPolicy policy) {
+    // Retrieve old and new authorization policies
+    AuthorizationPolicy oldPolicy = storage.loadPolicy();
+    AuthorizationPolicy newPolicy = policy;
+
+    // Save new policy and set it in the permission manager
+    storage.savePolicy(newPolicy);
+    permissionManager.setAuthorizationPolicy(newPolicy);
+
+    // Create audit log JSON object
+    JSONObject auditLog = new JSONObject();
+
+    // Process roles and permissions for audit log
+    processPermissionsAudit(oldPolicy, newPolicy, auditLog);
+
+    // Log the audit details
+    Logger.getLogger(getClass().getName()).info("Authorization Policy Audit: " + auditLog.toString());
+
+    savedEvent.fire(new AuthorizationPolicySavedEvent(newPolicy));
+}
+```
+
+Add the following methods into the same class
+
+```java
+
+    private void processPermissionsAudit(AuthorizationPolicy oldPolicy,
+                                         AuthorizationPolicy newPolicy,
+                                         JSONObject auditLog) {
+        Set<Role> roles = oldPolicy.getRoles();
+
+        for (Role role : roles) {
+            JSONArray auditEntries = new JSONArray();
+            Map<String, String> oldPermissions = extractPermissions(oldPolicy, role);
+            Map<String, String> newPermissions = extractPermissions(newPolicy, role);
+
+            // Combine the permission names from both old and new maps
+            Set<String> allPermissionNames = new HashSet<>(oldPermissions.keySet());
+            allPermissionNames.addAll(newPermissions.keySet());
+
+            // Collect changed permissions
+            for (String permissionName : allPermissionNames) {
+                String oldAccess = oldPermissions.getOrDefault(permissionName, "NOT_SET");
+                String newAccess = newPermissions.getOrDefault(permissionName, "NOT_SET");
+
+                if (!oldAccess.equals(newAccess)) {
+                    JSONObject entry = new JSONObject();
+                    entry.put("permission", permissionName);
+                    entry.put("oldAccess", oldAccess);
+                    entry.put("newAccess", newAccess);
+                    auditEntries.add(entry);
+                }
+            }
+
+            if (!auditEntries.isEmpty()) {
+                Map<String, String> currentUserInfo = getCurrentUserInfo();
+                if (!currentUserInfo.containsKey("error")) {
+                    String username = currentUserInfo.get("username");
+                    String ipAddress = currentUserInfo.get("ipAddress");
+                    String sessionId = currentUserInfo.get("sessionId");
+
+                    // Prepare old and new JSON structures
+                    JSONObject oldValue = new JSONObject();
+                    JSONArray oldPermissionsArray = new JSONArray();
+                    JSONObject newValue = new JSONObject();
+                    JSONArray newPermissionsArray = new JSONArray();
+
+                    // In JSON-simple there is no getJSONObject() so we cast the result of get(i)
+                    for (int i = 0; i < auditEntries.size(); i++) {
+                        JSONObject entry = (JSONObject) auditEntries.get(i);
+
+                        JSONObject oldEntry = new JSONObject();
+                        oldEntry.put("permission", entry.get("permission"));
+                        oldEntry.put("access", entry.get("oldAccess"));
+                        oldPermissionsArray.add(oldEntry);
+
+                        JSONObject newEntry = new JSONObject();
+                        newEntry.put("permission", entry.get("permission"));
+                        newEntry.put("access", entry.get("newAccess"));
+                        newPermissionsArray.add(newEntry);
+                    }
+
+                    oldValue.put("Permissions", oldPermissionsArray);
+                    newValue.put("Permissions", newPermissionsArray);
+
+                    // Set audit trail parameters
+                    String actionType = AuditActionService.ActionType.UPDATE.toString();
+
+                    // Async audit logging using CompletableFuture
+                    CompletableFuture.runAsync(() -> {
+                        try {
+                            auditActionService.logSecuritySettingsAction(
+                                    role.getName(),
+                                    actionType,
+                                    username,
+                                    String.valueOf(oldValue),
+                                    String.valueOf(newValue),
+                                    ipAddress,
+                                    sessionId
+                            );
+                        } catch (Exception e) {
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    private Map<String, String> extractPermissions(AuthorizationPolicy policy, Role role) {
+        Map<String, String> permissionsMap = new HashMap<>();
+        Collection<Permission> permissionsList = policy.getPermissions(role).collection();
+
+        for (Permission permission : permissionsList) {
+            permissionsMap.put(permission.getName(), permission.getResult().toString());
+        }
+
+        return permissionsMap;
+    }
+
+    @EJB
+    private AuditActionService auditActionService;
+
+    @Inject
+    private HttpServletRequest request;
+
+    @Inject
+    private User loggedInUser;
+
+    // Add this new method to the class
+    private Map<String, String> getCurrentUserInfo() {
+        Map<String, String> userInfo = new LinkedHashMap<>();
+
+        try {
+            // Get username
+            String username = loggedInUser != null ? loggedInUser.getIdentifier() : "unknown";
+
+            // Get session ID
+            HttpSession session = request.getSession(false);
+            String sessionId = session != null ? session.getId() : "no-session";
+
+            // Get IP address
+            String ipAddress = getClientIpAddress(request);
+
+            userInfo.put("username", username);
+            userInfo.put("sessionId", sessionId);
+            userInfo.put("ipAddress", ipAddress);
+
+        } catch (Exception e) {
+            userInfo.put("error", "Failed to retrieve user information: " + e.getMessage());
+        }
+
+        return userInfo;
+    }
+
+    private String getClientIpAddress(HttpServletRequest request) {
+        String[] HEADERS_TO_CHECK = {
+                "X-Forwarded-For",
+                "Proxy-Client-IP",
+                "WL-Proxy-Client-IP",
+                "HTTP_X_FORWARDED_FOR",
+                "HTTP_X_FORWARDED",
+                "HTTP_X_CLUSTER_CLIENT_IP",
+                "HTTP_CLIENT_IP",
+                "HTTP_FORWARDED_FOR",
+                "HTTP_FORWARDED",
+                "HTTP_VIA",
+                "REMOTE_ADDR"
+        };
+
+        for (String header : HEADERS_TO_CHECK) {
+            String ip = request.getHeader(header);
+            if (ip != null && ip.length() != 0 && !"unknown".equalsIgnoreCase(ip)) {
+                // If it's a comma separated list, take the first IP
+                return ip.contains(",") ? ip.split(",")[0].trim() : ip;
+            }
+        }
+
+        return request.getRemoteAddr();
+    }
+```
